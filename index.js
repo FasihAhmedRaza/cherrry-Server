@@ -52,6 +52,132 @@ app.post('/webhook', async (req, res) => {
   // }
 
   
+// Add a helper function to check active contexts
+function hasActiveContext(agent, contextName) {
+  const context = agent.getContext(contextName);
+  return context && context.lifespan > 0;
+}
+
+async function handleComplaint(agent) {
+  console.log('Complaint handler triggered');
+  
+  // Set initial complaint context if not already set
+  if (!hasActiveContext(agent, 'complaint-flow')) {
+    agent.setContext({
+      name: 'complaint-flow',
+      lifespan: 5,
+      parameters: { step: 'awaiting_name' }
+    });
+    agent.add("I understand you want to submit a complaint. Could you please tell me your name?");
+    return;
+  }
+  
+  const complaintContext = agent.getContext('complaint-flow');
+  console.log('Current complaint context:', complaintContext);
+  
+  const step = complaintContext.parameters.step;
+  const userInput = agent.query;
+
+  switch (step) {
+    case 'awaiting_name':
+      agent.setContext({
+        name: 'complaint-flow',
+        lifespan: 5,
+        parameters: {
+          step: 'awaiting_email',
+          name: userInput
+        }
+      });
+      agent.add(`Thanks ${userInput}! Could you please share your email address so we can follow up with you?`);
+      break;
+
+    case 'awaiting_email':
+      const email = userInput;
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      
+      if (!emailRegex.test(email)) {
+        agent.setContext({
+          name: 'complaint-flow',
+          lifespan: 5,
+          parameters: {
+            ...complaintContext.parameters
+          }
+        });
+        agent.add("That doesn't look like a valid email address. Could you please provide a valid email?");
+        return;
+      }
+
+      agent.setContext({
+        name: 'complaint-flow',
+        lifespan: 5,
+        parameters: {
+          ...complaintContext.parameters,
+          step: 'awaiting_complaint',
+          email: email
+        }
+      });
+      agent.add("Thank you. Please describe your complaint in detail:");
+      break;
+
+    case 'awaiting_complaint':
+      const complaintData = complaintContext.parameters;
+      const referenceId = `COMP${Date.now()}`;
+      
+      try {
+        await client.create({
+          timestamp: new Date().toISOString(),
+          name: complaintData.name,
+          email: complaintData.email,
+          complaint: userInput,
+          status: 'New',
+          reference_id: referenceId
+        }, {
+          sheet: 'Complaints'
+        });
+        
+        // Clear the context after successful save
+        agent.setContext({
+          name: 'complaint-flow',
+          lifespan: 0
+        });
+        
+        agent.add(`Thank you ${complaintData.name} for bringing this to our attention. Your complaint has been registered with reference ID: ${referenceId}.`);
+        agent.add("Our team will review your complaint and contact you at the provided email address.");
+        
+        const richContentPayload = {
+          "richContent": [
+            [
+              {
+                "type": "chips",
+                "options": [
+                  {
+                    "text": "Submit Another Complaint"
+                  },
+                  {
+                    "text": "Start Over"
+                  }
+                ]
+              }
+            ]
+          ]
+        };
+        
+        agent.add(new Payload(agent.UNSPECIFIED, richContentPayload, { 
+          rawPayload: true, 
+          sendAsMessage: true 
+        }));
+
+      } catch (error) {
+        console.error('Error saving complaint data:', error);
+        agent.add("I apologize, but I couldn't save your complaint at the moment. Please try again later.");
+      }
+      break;
+  }
+}
+
+  
+
+  
   async function newCustomer(agent) {
     const { name, phone } = agent.parameters;
     
@@ -72,12 +198,20 @@ app.post('/webhook', async (req, res) => {
     }
   }
 
-  
-  async function fallback(agent) {
-    console.log(`Fallback triggered...`);
-    const session = agent.session;
-    const currentContext = userContexts.get(session) || { step: 'initial' };
 
+// Modified fallback intent to check for active complaint flow
+async function fallback(agent) {
+  console.log('Fallback triggered');
+  
+  // If we're in a complaint flow, handle it in the complaint handler
+  if (hasActiveContext(agent, 'complaint-flow')) {
+    return handleComplaint(agent);
+  }
+  
+  // Original fallback logic
+  const session = agent.session;
+  const currentContext = userContexts.get(session) || { step: 'initial' };
+  
     switch (currentContext.step) {
       case 'initial':
         userContexts.set(session, { step: 'awaiting_name' });
@@ -163,6 +297,7 @@ app.post('/webhook', async (req, res) => {
 
   let intentMap = new Map();
   // intentMap.set('hi', hi);
+  intentMap.set('handle_complaint', handleComplaint);  // Add the new intent
   intentMap.set('new_customer', newCustomer);
   intentMap.set('Default Fallback Intent', fallback);
   
