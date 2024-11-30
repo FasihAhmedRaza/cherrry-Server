@@ -125,7 +125,7 @@ async function handleComplaint(agent) {
       
       try {
         await client.create({
-          timestamp: new Date().toISOString(),
+          // timestamp: new Date().toISOString(),
           name: complaintData.name,
           email: complaintData.email,
           complaint: userInput,
@@ -183,7 +183,7 @@ async function handleComplaint(agent) {
     
     try {
       await client.create({
-        timestamp: new Date().toISOString(),
+        // timestamp: new Date().toISOString(),
         name: name || '',
         phone: phone || '',
         email: email || '',
@@ -238,7 +238,7 @@ async function fallback(agent) {
 
         try {
           await client.create({
-            timestamp: new Date().toISOString(),
+            // timestamp: new Date().toISOString(),
             name: userContexts.get(session).name,
             email: email,
             customer_type: 'Fallback User',
