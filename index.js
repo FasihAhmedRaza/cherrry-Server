@@ -125,7 +125,7 @@ async function handleComplaint(agent) {
       
       try {
         await client.create({
-          timestamp: new Date().toISOString(),
+          // timestamp: new Date().toISOString(),
           name: complaintData.name,
           email: complaintData.email,
           complaint: userInput,
@@ -183,7 +183,7 @@ async function handleComplaint(agent) {
     
     try {
       await client.create({
-        timestamp: new Date().toISOString(),
+        // timestamp: new Date().toISOString(),
         name: name || '',
         phone: phone || '',
         email: email || '',
@@ -256,8 +256,13 @@ async function handleComplaint(agent) {
   
         try {
           await client.create({
+<<<<<<< HEAD
             timestamp: new Date().toISOString(),
             name: userName,
+=======
+            // timestamp: new Date().toISOString(),
+            name: userContexts.get(session).name,
+>>>>>>> fada1270fbeeaccc566cb5b971bf4c9dba2725af
             email: email,
             customer_type: 'Fallback User',
             query: originalQuery  // Use the stored original query here
