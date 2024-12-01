@@ -198,57 +198,75 @@ async function handleComplaint(agent) {
     }
   }
 
-
-// Modified fallback intent to check for active complaint flow
-async function fallback(agent) {
-  console.log('Fallback triggered');
+  async function fallback(agent) {
+    console.log('Fallback triggered');
   
-  // If we're in a complaint flow, handle it in the complaint handler
-  if (hasActiveContext(agent, 'complaint-flow')) {
-    return handleComplaint(agent);
-  }
+    // Capture the initial user query
+    const userQuery = agent.query;
+    console.log('User query:', userQuery);
   
-  // Original fallback logic
-  const session = agent.session;
-  const currentContext = userContexts.get(session) || { step: 'initial' };
+    // If we're in a complaint flow, handle it in the complaint handler
+    if (hasActiveContext(agent, 'complaint-flow')) {
+      return handleComplaint(agent);
+    }
+  
+    const session = agent.session;
+    const currentContext = userContexts.get(session) || { step: 'initial' };
+    console.log('Current context:', currentContext);
   
     switch (currentContext.step) {
       case 'initial':
-        userContexts.set(session, { step: 'awaiting_name' });
-        agent.add("I see you're having trouble. Let me help you better. Could you please tell me your name?");
+        userContexts.set(session, { step: 'awaiting_name', originalQuery: userQuery });
+        console.log('Set context to awaiting_name');
+        agent.add("I’m not sure about that question, but my team will provide you with the information shortly");
+        agent.add("Could you please tell me your name?")
         break;
-
+  
       case 'awaiting_name':
         const name = agent.query;
-        userContexts.set(session, { 
+        console.log('User name:', name);
+        userContexts.set(session, {
           step: 'awaiting_email',
-          name: name
+          name: name,
+          originalQuery: currentContext.originalQuery || userQuery
         });
+        console.log('Set context to awaiting_email');
         agent.add(`Thanks ${name}! Could you please share your email address?`);
         break;
-
+  
       case 'awaiting_email':
         const email = agent.query;
+        console.log('User email:', email);
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        
+  
+        // Debug logging
+        console.log('Current session context:', userContexts.get(session));
+        console.log('Email input:', email);
+  
         if (!emailRegex.test(email)) {
           agent.add("That doesn't look like a valid email address. Could you please provide a valid email?");
           return;
         }
-
+  
+        const sessionContext = userContexts.get(session);
+        const userName = sessionContext?.name || 'Unknown';
+        const originalQuery = sessionContext?.originalQuery || 'No original query';
+        console.log('User name:', userName);
+        console.log('Original Query:', originalQuery);
+  
         try {
           await client.create({
             timestamp: new Date().toISOString(),
-            name: userContexts.get(session).name,
+            name: userName,
             email: email,
             customer_type: 'Fallback User',
-            query: 'Fallback Interaction'
+            query: originalQuery  // Use the stored original query here
           });
-          
+  
           userContexts.delete(session);
-          
-          agent.add(`Thank you for providing your information! I've saved your details and our team will get back to you soon. How else can I help you?`);
-          
+  
+          agent.add(`Thank you ${userName}, for your information! Our team will contact you within 30 minutes to discuss your query `);
+          agent.add("How else can I help you?")
           const richContentPayload = {
             "richContent": [
               [
@@ -258,43 +276,29 @@ async function fallback(agent) {
                     {
                       "text": "Start Over"
                     }
-                    // },
-                    // {
-                    //   "text": "Contact Support"
-                    // }
                   ]
                 }
               ]
             ]
           };
-          
-          agent.add(new Payload(agent.UNSPECIFIED, richContentPayload, { 
-            rawPayload: true, 
-            sendAsMessage: true 
+  
+          agent.add(new Payload(agent.UNSPECIFIED, richContentPayload, {
+            rawPayload: true,
+            sendAsMessage: true
           }));
-
+  
         } catch (error) {
           console.error('Error saving user data:', error);
           agent.add("I apologize, but I couldn't save your information. Please try again later.");
         }
         break;
-
+  
       default:
         userContexts.set(session, { step: 'initial' });
         agent.add("I'm sorry, but I'm having trouble understanding. Let's start over. Could you please tell me your name?");
     }
-
-    try {
-      await client.create({
-        timestamp: new Date().toISOString(),
-        customer_type: 'Unknown',
-        query: agent.query
-      });
-    } catch (error) {
-      console.error('Error logging fallback query:', error);
-    }
   }
-
+  
   let intentMap = new Map();
   // intentMap.set('hi', hi);
   intentMap.set('handle_complaint', handleComplaint);  // Add the new intent
